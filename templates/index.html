@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Recorder</title>
+    <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Audio Recorder</h1>
+    <button id="start">Start Recording</button>
+    <button id="stop" disabled>Stop Recording</button>
+    <!-- <button id="play" disabled>Play Audio</button> -->
+
+    <script>
+
+        const socket = io();
+        let audioContext;
+        let mediaStreamSource;
+        let isRecording = false; // 录音状态标志
+        let isPlaying = false; // 播放状态标志
+        // let audioChunks = []; // 存储 PCM 数据
+        let audioQueue = []; // 用于存储待播放的音频数据
+        let workletNode; 
+
+
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        async function startRecording() {
+            if (isRecording) return; // 如果已经在录音，直接返回
+
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 设置采样频率为 16 kHz
+            mediaStreamSource = audioContext.createMediaStreamSource(stream);
+
+            // 加载 AudioWorklet
+            await audioContext.audioWorklet.addModule('/static/audio-processor.js');
+            const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+
+            workletNode.port.onmessage = (event) => {
+                // 接收来自 AudioWorklet 的 PCM 数据
+                socket.emit('audio', event.data); // 发送 ArrayBuffer
+            };
+
+            mediaStreamSource.connect(workletNode);
+            workletNode.connect(audioContext.destination); // 连接到音频输出
+
+            isRecording = true; // 设置录音状态为 true
+        }
+
+        // const playaudioChunks = [];
+
+        // 初始化 AudioContext
+        function initAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+        }
+
+         // 处理并播放音频数据
+        function playAudioStream(audioData) {
+            if (isPlaying) return;
+            isPlaying = true;
+
+            const pcmData = new Int16Array(audioData);
+            const floatData = new Float32Array(pcmData.length);
+            for (let i = 0; i < pcmData.length; i++) {
+                floatData[i] = pcmData[i] / 32768.0;
+            }
+
+            const buffer = audioContext.createBuffer(1, floatData.length, audioContext.sampleRate);
+            buffer.getChannelData(0).set(floatData);
+
+            const source = audioContext.createBufferSource();
+            source.buffer = buffer;
+            source.connect(audioContext.destination);
+            source.onended = () => {
+                isPlaying = false;
+                playAudioBuffer(); // 播放下一个音频数据
+            };
+            source.start();
+        }
+        
+        // 播放音频缓冲区
+        function playAudioBuffer() {
+            if (audioQueue.length > 0 && !isPlaying) {
+                const nextAudio = audioQueue.shift();
+                playAudioStream(nextAudio);
+            }
+        }
+
+         // 监听后端发送的音频数据
+        socket.on('play_audio_stream', (data) => {
+            initAudioContext();
+
+            // 将收到的音频数据推入播放队列
+            const audioData = base64ToArrayBuffer(data.data);
+            audioQueue.push(audioData);
+
+            // 开始播放
+            playAudioBuffer();
+        });
+
+        // 辅助函数：将 base64 编码的字符串转换为 ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+
+        document.getElementById('start').onclick = async () => {
+            try {
+                await startRecording(); // 启动录音
+                document.getElementById('start').disabled = true;
+                document.getElementById('stop').disabled = false;
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+            }
+        };
+
+        document.getElementById('stop').onclick = () => {
+            if (isRecording) {
+                mediaStreamSource.disconnect(); // 断开媒体流源
+                if (workletNode) {
+                    workletNode.disconnect(); // 断开工作节点
+                }
+                audioContext.close(); // 关闭音频上下文
+                isRecording = false; // 设置录音状态为 false
+
+                // 发送 stop 事件到后端
+                socket.emit('stop'); // 发送停止事件
+
+                document.getElementById('start').disabled = false;
+                document.getElementById('stop').disabled = true;
+                console.log('Recording stopped.'); // 记录停止信息
+            }
+        };
+
+    </script>
+</body>
+</html>
