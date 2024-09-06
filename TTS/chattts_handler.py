@@ -39,7 +39,7 @@ class ChatTTSHandler(BaseHandler):
         # use force_redownload=True if the weights have been updated.
         # self.model.load(source="huggingface")
         # chat.load(source='local') same source not set   
-        self.model.load(compile=compile_mode, device=device) # Set to compile =  True for better performance
+        self.model.load(compile=compile_mode, device=device, use_vllm=False) # Set to compile =  True for better performance
         
         ###################################
         # Sample a speaker from Gaussian.
@@ -56,7 +56,7 @@ class ChatTTSHandler(BaseHandler):
         # 指定音色种子值每次生成 spk_emb 和重复使用预生成好的 spk_emb 效果有较显著差异
         # 使用 .pt 音色文件或者音色码效果会好一些
         # pt 下载 https://huggingface.co/spaces/taa/ChatTTS_Speaker  音色控制
-        spk = torch.load("TTS/pt/seed_929_restored_emb.pt", map_location=torch.device('cpu')).detach()
+        spk = torch.load("TTS/pt/seed_929_restored_emb.pt", map_location=torch.device(device)).detach()
         spk_emb_str = ChatTTSHandler._encode_spk_emb(spk)
 
         self.params_infer_code = self.model.InferCodeParams(

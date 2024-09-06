@@ -36,9 +36,9 @@ class LargeLanguageModelHandler(BaseHandler):
             # gen_kwargs={'return_full_text': False, 'temperature': 0.7, 'do_sample': False},
             gen_kwargs={'return_full_text': False,'do_sample': True},
             user_role="user",
-            chat_size=1,
+            chat_size=1000,
             init_chat_role=None, 
-            init_chat_prompt="你是一个AI助手.",
+            init_chat_prompt="你是一个AI聊天助手,能够言简意赅的回答用户的问题,回答的问题不要超过100个字符,同时能够提供情绪价值.",
         ):
 
         # 让系统选择是CPU还是GPU
@@ -151,5 +151,4 @@ class LargeLanguageModelHandler(BaseHandler):
         )
 
         # don't forget last sentence
-        print(printable_text)
         yield printable_text

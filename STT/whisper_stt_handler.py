@@ -37,7 +37,7 @@ class WhisperSTTHandler(BaseHandler):
         self.gen_kwargs = gen_kwargs
 
         # 确定设备
-        # I have two gpu, I want to assign it to first one
+        # I have two gpu, I want to assign it to second one
         self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
 
         logger.info("VAD will be asign to {self.device}")

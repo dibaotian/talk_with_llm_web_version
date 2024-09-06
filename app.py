@@ -21,13 +21,13 @@ import logging
 global logger
 logging.basicConfig(
     filename='log_app.log',  # 将日志写入文件
-    level=logging.DEBUG,
+    level=logging.ERROR,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True,
 )
 logger = logging.getLogger(__name__)
 logger = logging.getLogger("Server_logger")
-logger.setLevel(logging.DEBUG)
+# logger.setLevel(logging.DEBUG)
 
 
 class ThreadManager:
@@ -78,14 +78,11 @@ class SendAudioHandler:
                 logger.info(f'Received audio chunk: {type(audio_chunk)}, shape: {getattr(audio_chunk, "shape", None)}')
                 
                 if isinstance(audio_chunk, np.ndarray) and audio_chunk.size > 0:
-                    logger.info('Processing audio chunk...')
                     # 将NumPy数组转换为字节串
                     audio_bytes = audio_chunk.tobytes()
                     encoded_audio = base64.b64encode(audio_bytes).decode('utf-8')
                     socketio.emit('play_audio_stream', {'data': encoded_audio})
-                    logger.info("Sent audio chunk to client")
                 elif isinstance(audio_chunk, bytes) and len(audio_chunk) > 0:
-                    logger.info('Processing audio chunk...')
                     encoded_audio = base64.b64encode(audio_chunk).decode('utf-8')
                     socketio.emit('play_audio_stream', {'data': encoded_audio})
                     logger.info("Sent audio chunk to client")
@@ -93,6 +90,8 @@ class SendAudioHandler:
                     logger.warning(f"Received invalid or empty audio chunk: {audio_chunk}")
             except Exception as e:
                 logger.error(f"Error processing audio chunk: {e}", exc_info=True)
+
+
 
 app = Flask(__name__)
 socketio = SocketIO(app)
@@ -128,7 +127,6 @@ def index():
 def handle_audio(data):
     global audio_data_list
     audio_data_list.append(data)  # 将接收到的数据添加到列表中
-    # print("datalen",len(data))
     # recv_audio_chunks_queue.put(data)  # 将接收到的数据放入队列,要注意数据长度需要满足VAD的输入要求
     # 检查当前音频数据的总长度
     if sum(len(chunk) for chunk in audio_data_list) >= 1024:  # 如果总长度达到1024
@@ -167,25 +165,6 @@ def stop_recording():
 
             # 清空音频数据列表
             audio_data_list = []
-
-
-# # 向客户端发送音频流
-# @socketio.on('connect')
-# def stream_audio_to_client(queue, socketio):
-#     while not stop_event.is_set():
-#         try:
-#             audio_chunk = queue.get()
-#             if audio_chunk:
-#                 # 将音频数据编码为 base64
-#                 encoded_audio = base64.b64encode(audio_chunk).decode('utf-8')
-#                 print("stream_audio_to_client")
-#                 # 发送音频数据到客户端
-#                 socketio.emit('play_audio_stream', {'data': encoded_audio})
-#         except Exception as e:
-#             logger.error(f"Error sending audio stream: {e}")
-
-
-
 
 def main():
    
