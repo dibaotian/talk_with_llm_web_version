@@ -1,4 +1,5 @@
 from base_handler import BaseHandler
+from flask_socketio import emit
 
 from time import perf_counter
 from transformers import (
@@ -35,6 +36,7 @@ class WhisperSTTHandler(BaseHandler):
         self.torch_dtype = getattr(torch, torch_dtype)
         self.compile_mode=compile_mode
         self.gen_kwargs = gen_kwargs
+        self.socketio = None  # 添加这一行
 
         # 确定设备
         # I have two gpu, I want to assign it to second one
@@ -96,6 +98,9 @@ class WhisperSTTHandler(BaseHandler):
 
         logger.info(f"{self.__class__.__name__}:  warmed up! time: {start_event.elapsed_time(end_event) * 1e-3:.3f} s")
 
+    def set_socketio(self, socketio):
+        self.socketio = socketio  # 添加这个方法
+
     def process(self, spoken_prompt):
         logger.debug("infering whisper...")
 
@@ -112,5 +117,9 @@ class WhisperSTTHandler(BaseHandler):
 
         logger.debug("finished whisper inference")
         console.print(f"[yellow]USER: {pred_text}")
+         # 发送 STT 结果到前端
+        # 使用 socketio 发送结果到前端
+        if self.socketio:
+            self.socketio.emit('stt_result', {'text': pred_text})
 
         yield pred_text

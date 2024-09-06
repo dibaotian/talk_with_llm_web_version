@@ -186,6 +186,7 @@ def main():
         queue_in=spoken_prompt_queue,
         queue_out=text_prompt_queue,
     )
+    whisper_stt.set_socketio(socketio)  # 设置 socketio
 
     # create LLM instance
     llm = LargeLanguageModelHandler(
@@ -201,6 +202,7 @@ def main():
         queue_out=send_audio_chunks_queue,
         setup_args=(should_listen,),
     )
+    chat_tts.set_socketio(socketio)  # 设置 socketio
 
     send_audio = SendAudioHandler(
         stop_event, 

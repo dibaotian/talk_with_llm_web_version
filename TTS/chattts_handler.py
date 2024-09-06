@@ -1,4 +1,5 @@
 from base_handler import BaseHandler
+from flask_socketio import emit
 
 import ChatTTS
 
@@ -233,10 +234,17 @@ class ChatTTSHandler(BaseHandler):
                 if ChatTTSHandler.checkvoice(sub_wav):
                     yield ChatTTSHandler.formatted(sub_wav, output_format)
 
+    def set_socketio(self, socketio):
+        self.socketio = socketio  # 添加这个方法
 
     def process(self,llm_sentence):
 
-        console.print(f"[green]ASSISTANT: {llm_sentence}")
+        # console.print(f"[green]ASSISTANT: {llm_sentence}")
+
+           # 发送 LLM 结果到前端
+        if self.socketio:
+            self.socketio.emit('llm_response', {'text': llm_sentence})
+
 
         streamchat = self.model.infer(
             llm_sentence,
@@ -256,8 +264,5 @@ class ChatTTSHandler(BaseHandler):
             audio_chunk = np.int16(audio_chunk * 32767)
             yield audio_chunk
 
-        # self.should_listen.set()
-        # thread = Thread(target=ChatTTSHandler.generate, kwargs={"self":self,"streamchat":streamchat, "output_format":None})
-        # thread.start()
         logger.info("wav_chunk tts processed")
         self.should_listen.set() # 设置监听状态
