@@ -241,10 +241,9 @@ class ChatTTSHandler(BaseHandler):
 
         # console.print(f"[green]ASSISTANT: {llm_sentence}")
 
-           # 发送 LLM 结果到前端
+        # 发送 LLM 结果到前端
         if self.socketio:
             self.socketio.emit('llm_response', {'text': llm_sentence})
-
 
         streamchat = self.model.infer(
             llm_sentence,

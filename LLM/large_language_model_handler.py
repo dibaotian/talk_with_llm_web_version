@@ -1,5 +1,4 @@
 from base_handler import BaseHandler
-
 from threading import Thread
 
 from transformers import (
@@ -14,6 +13,10 @@ from LLM.chat import Chat
 from rich.console import Console
 
 from nltk import sent_tokenize
+
+import json
+from flask_socketio import emit
+import re
 
 import logging
 
@@ -36,14 +39,22 @@ class LargeLanguageModelHandler(BaseHandler):
             # gen_kwargs={'return_full_text': False, 'temperature': 0.7, 'do_sample': False},
             gen_kwargs={'return_full_text': False,'do_sample': True},
             user_role="user",
-            chat_size=100,
-            init_chat_role=None, 
-            init_chat_prompt="你是一个AI聊天助手,能够言简意赅的回答用户的问题,回答的问题一定不能超过60个字符,同时能够提供情绪价值.",
+            chat_size=2,
+            init_chat_role="user", 
+            init_chat_prompt="""1 你是一个AI家庭助手,你的名字叫Joey或者周一,你是我们家庭的成员,能够言简意赅的回答用户的问题,
+                                2 判断是否是技术性问题的回答,如果是技术性问题的回答,可以回答的详细一点,如果是一般常识性问题的回答,最好不要过100个字符,
+                                3 如果问你家里的温度情况或者说有点热,先成你的想法,热按后如果你认为有必要调用工具,请生成一个JSON格式的agent动作,例如:
+                                   {"action": "check_temperature", "rooms": ["living_room", "bedroom", "kitchen"]}
+                                4 如果问你家里的灯光或者光线问题,先成你的回答,如果你认为有必要调用工具,请生成一个JSON格式的agent动作,例如:
+                                   开灯:{"action": "light", "rooms": ["on"]}
+                                   关灯:{"action": "light", "rooms": ["off"]}
+                                5  在生成JSON格式的agent动作时,请确保将其放在单独的一行,并用大括号{}包围。
+                            """,
         ):
 
         # 让系统选择是CPU还是GPU
         if device is None:
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
         self.device = device
 
@@ -127,6 +138,13 @@ class LargeLanguageModelHandler(BaseHandler):
 
         logger.info(f"{self.__class__.__name__}:  warmed up! time: {start_event.elapsed_time(end_event) * 1e-3:.3f} s")
 
+    def set_socketio(self, socketio):
+        self.socketio = socketio
+
+    def send_json_to_frontend(self, data):
+        if self.socketio:
+            self.socketio.emit('agent_action', data)
+
     def process(self, prompt):
         logger.info("infering language model...")
 
@@ -141,14 +159,38 @@ class LargeLanguageModelHandler(BaseHandler):
         for new_text in self.streamer:
             generated_text += new_text
             printable_text += new_text
+
+            # 检查是否有 agent 动作
+            agent_action, remaining_text = self.extract_agent_action(printable_text)
+            if agent_action:
+                self.send_json_to_frontend(agent_action)
+                printable_text = remaining_text  # 保留非 JSON 部分的文本
+
             sentences = sent_tokenize(printable_text)
-            if len(sentences) > 1:
-                yield(sentences[0])
-                printable_text = new_text
+            while len(sentences) > 1:
+                yield sentences.pop(0)
+            printable_text = sentences[0] if sentences else ""
 
         self.chat.append(
             {"role": "assistant", "content": generated_text}
         )
 
-        # don't forget last sentence
-        yield printable_text
+        # 输出最后的句子
+        if printable_text:
+            yield printable_text
+
+    def extract_agent_action(self, text):
+        # 使用正则表达式查找 JSON 格式的 agent 动作
+        pattern = r'(\{[^{}]*\})'
+        matches = re.finditer(pattern, text)
+        
+        for match in matches:
+            try:
+                action = json.loads(match.group())
+                # 从原文本中移除 JSON 部分，但保留其他文本
+                remaining_text = text[:match.start()] + text[match.end():]
+                return action, remaining_text.strip()
+            except json.JSONDecodeError:
+                continue
+        
+        return None, text

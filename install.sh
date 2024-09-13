@@ -6,3 +6,4 @@ pip install rich
 pip install transformers
 pip install nltk
 pip install git+https://github.com/2noise/ChatTTS.git
+pip install git+https://github.com/andimarafioti/MeloTTS.git#egg=MeloTTS

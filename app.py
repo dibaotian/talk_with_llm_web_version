@@ -14,7 +14,8 @@ from queue import Queue
 from VAD.vad_handler import VADHandler
 from STT.whisper_stt_handler import WhisperSTTHandler
 from LLM.large_language_model_handler import LargeLanguageModelHandler
-from TTS.chattts_handler import ChatTTSHandler
+# from TTS.chattts_handler2 import ChatTTSHandler
+from TTS.melo_handler import MeloTTSHandler
 # from SEND_STREAMER.send_streamer_handler import SendAudioHandler  # 导入类
 
 import logging
@@ -194,9 +195,17 @@ def main():
         queue_in=text_prompt_queue,
         queue_out=lm_response_queue,
     )
+    llm.set_socketio(socketio)
 
     # create TTS instance
-    chat_tts = ChatTTSHandler(
+    # chat_tts = ChatTTSHandler(
+    #     stop_event,
+    #     queue_in=lm_response_queue,
+    #     queue_out=send_audio_chunks_queue,
+    #     setup_args=(should_listen,),
+    # )
+
+    chat_tts = MeloTTSHandler(
         stop_event,
         queue_in=lm_response_queue,
         queue_out=send_audio_chunks_queue,

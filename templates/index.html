@@ -58,6 +58,18 @@
         let isPlaying = false; // 播放状态标志
         let audioQueue = []; // 用于存储待播放的音频数据
         let workletNode; 
+        let stream;
+
+        socket.on('agent_action', (data) => {
+            console.log('Received agent action:', data);
+            // 根据 agent 动作执行相应的操作
+            if (data.action === 'check_temperature') {
+                appendMessage('Agent', `Checking temperature in rooms: ${data.rooms.join(', ')}`, 'agent-message');
+            } else if (data.action === 'use_tool') {
+                appendMessage('Agent', `Using tool: ${data.tool_name} with input: ${data.input}`, 'agent-message');
+            }
+            // 添加更多的 agent 动作处理逻辑
+        });
 
         const chatMessages = document.getElementById('chat-messages');
 
@@ -70,34 +82,79 @@
 
             if (isRecording) return; // 如果已经在录音，直接返回
 
-            if (!audioContext) {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 设置采样频率为 16 kHz
-            }
+            try {
+                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    mediaStreamSource = audioContext.createMediaStreamSource(stream);
+                     // 加载 AudioWorklet
+                    await audioContext.audioWorklet.addModule('/static/audio-processor.js');
+                    workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+                    // 接收来自 AudioWorklet 的 PCM 数据
+                    workletNode.port.onmessage = (event) => {
+                        socket.emit('audio', event.data);
+                    };
 
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaStreamSource = audioContext.createMediaStreamSource(stream);
+                    mediaStreamSource.connect(workletNode);
+                    isRecording = true;
+                } catch (error) {
+                    console.error('Error accessing microphone:', error);
+                }
 
-            // 加载 AudioWorklet
-            await audioContext.audioWorklet.addModule('/static/audio-processor.js');
-            const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
+            // if (!audioContext) {
+            //     audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 设置采样频率为 16 kHz
+            // }
 
-            workletNode.port.onmessage = (event) => {
-                // 接收来自 AudioWorklet 的 PCM 数据
-                socket.emit('audio', event.data); // 发送 ArrayBuffer
-            };
+            // const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // mediaStreamSource = audioContext.createMediaStreamSource(stream);
 
-            mediaStreamSource.connect(workletNode);
+            // // 加载 AudioWorklet
+            // await audioContext.audioWorklet.addModule('/static/audio-processor.js');
+            // const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
 
-            //这里只是采集音频送给后端，不需要输出
-            // workletNode.connect(audioContext.destination); // 连接到音频输出
+            // workletNode.port.onmessage = (event) => {
+            //     // 接收来自 AudioWorklet 的 PCM 数据
+            //     socket.emit('audio', event.data); // 发送 ArrayBuffer
+            // };
 
-            isRecording = true; // 设置录音状态为 true
+            // mediaStreamSource.connect(workletNode);
+
+            // //这里只是采集音频送给后端，不需要输出
+            // // workletNode.connect(audioContext.destination); // 连接到音频输出
+
+            // isRecording = true; // 设置录音状态为 true
         }
 
         // socket.on('stt_result', (data) => {
         //     const sttResultDiv = document.getElementById('stt-result');
         //     sttResultDiv.textContent = 'You said: ' + data.text;
         // });
+
+        function stopRecording() {
+
+            if (!isRecording) return;
+
+            // 停止所有音轨
+            stream.getTracks().forEach(track => track.stop());
+
+            // 断开音频节点连接
+            if (mediaStreamSource) {
+                mediaStreamSource.disconnect();
+            }
+            if (workletNode) {
+                workletNode.disconnect();
+            }
+
+            // 关闭音频上下文
+            if (audioContext) {
+                audioContext.close();
+            }
+
+            isRecording = false;
+            // socket.emit('stop');
+            // startButton.disabled = false;
+            // stopButton.disabled = true;
+            console.log('Recording stopped.');
+        }
 
         socket.on('stt_result', (data) => {
             appendMessage('You', data.text, 'user-message');
@@ -130,8 +187,8 @@
             const pcmData = new Int16Array(audioData);
             const floatData = new Float32Array(pcmData.length);
             // 设置采样率
-            const sampleRate = 24000; 
-            // const sampleRate = 16000
+            // const sampleRate = 24000; 
+            const sampleRate = 16000
             for (let i = 0; i < pcmData.length; i++) {
                 floatData[i] = pcmData[i] / 32768.0;
             }
@@ -194,15 +251,16 @@
 
         document.getElementById('stop').onclick = () => {
             if (isRecording) {
-                mediaStreamSource.disconnect(); // 断开媒体流源
-                if (workletNode) {
-                    workletNode.disconnect(); // 断开工作节点
-                }
-                audioContext.close(); // 关闭音频上下文
-                isRecording = false; // 设置录音状态为 false
+                stopRecording();
+                // mediaStreamSource.disconnect(); // 断开媒体流源
+                // if (workletNode) {
+                //     workletNode.disconnect(); // 断开工作节点
+                // }
+                // audioContext.close(); // 关闭音频上下文
+                // isRecording = false; // 设置录音状态为 false
 
                 // 发送 stop 事件到后端
-                socket.emit('stop'); // 发送停止事件
+                // socket.emit('stop'); // 发送停止事件
 
                 document.getElementById('start').disabled = false;
                 document.getElementById('stop').disabled = true;
