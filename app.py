@@ -4,6 +4,7 @@ import wave
 import base64
 
 import os
+import torch
 import numpy as np
 import threading
 from threading import Event, Thread
@@ -171,6 +172,9 @@ def main():
    
     # 测试日志是否正常打印
     # logger.info("安装funasr后需要使用自定义日志记录器。")
+
+    torch.cuda.empty_cache()
+    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
 
 
     vad = VADHandler(

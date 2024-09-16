@@ -6,6 +6,7 @@ from transformers import (
     AutoTokenizer,
     pipeline,
     TextIteratorStreamer,
+    BitsAndBytesConfig,
 )
 import torch
 
@@ -20,10 +21,15 @@ import re
 
 import logging
 
+from LLM.prompt import minsprompts
+
+from LLM.ddg_search import DuckDuckGoSearch
+
 logger = logging.getLogger(__name__)
 
 console = Console()
 
+search_agent = DuckDuckGoSearch()
 
 class LargeLanguageModelHandler(BaseHandler):
     """
@@ -34,27 +40,52 @@ class LargeLanguageModelHandler(BaseHandler):
     def setup(
             self,
             model_name ="Qwen/Qwen2-7B-Instruct",
+            # model_name ="THUDM/glm-4v-9b",
+            # model_name ="Qwen/Qwen2-7B-Instruct-GPTQ-Int4", # load fail
+            # model_name ="Qwen/Qwen2-7B-Instruct-GPTQ-Int8",  # too slow in v100
             device = None,  # let system select
+            gpu_id = 0,  # 新增参数，默认使用第一个 GPU
             torch_dtype = "auto",
             # gen_kwargs={'return_full_text': False, 'temperature': 0.7, 'do_sample': False},
             gen_kwargs={'return_full_text': False,'do_sample': True},
             user_role="user",
-            chat_size=2,
+            chat_size=10,
             init_chat_role="user", 
-            init_chat_prompt="""1 你是一个AI家庭助手,你的名字叫Joey或者周一,你是我们家庭的成员,能够言简意赅的回答用户的问题,
-                                2 判断是否是技术性问题的回答,如果是技术性问题的回答,可以回答的详细一点,如果是一般常识性问题的回答,最好不要过100个字符,
-                                3 如果问你家里的温度情况或者说有点热,先成你的想法,热按后如果你认为有必要调用工具,请生成一个JSON格式的agent动作,例如:
-                                   {"action": "check_temperature", "rooms": ["living_room", "bedroom", "kitchen"]}
-                                4 如果问你家里的灯光或者光线问题,先成你的回答,如果你认为有必要调用工具,请生成一个JSON格式的agent动作,例如:
-                                   开灯:{"action": "light", "rooms": ["on"]}
-                                   关灯:{"action": "light", "rooms": ["off"]}
-                                5  在生成JSON格式的agent动作时,请确保将其放在单独的一行,并用大括号{}包围。
+            init_chat_prompt="""1. 你是一个AI家庭助手, 你的名字叫Joey或者周一, 你可以提供家庭生活中的帮助, 你的回答应简洁明了, 并以友好、轻松、可爱的口吻回应用户的问题。
+   
+                                2. 判断是否是技术性问题的回答, 如果是技术性问题, 可以回答得详细一点。对于一般常识性问题的回答, 最好不要超过100个字符。你可以使用多种agent, 比如控制家里的电器, 上网查询, 控制打印机等, 你可以根据需要判断是否要使用这些agent。
+
+                                3. 如果用户询问家里的温度情况或者说有点热, 请说出你的想法。如果你认为有必要调用工具, 请生成一个 JSON 格式的agent动作, 例如:
+                                {"action": "check_temperature", "rooms": ["living_room", "bedroom"]}
+
+                                4. 如果用户询问家里的灯光或光线问题, 请先表达你的想法。如果你认为有必要调用工具, 请生成一个 JSON 格式的agent动作, 例如:  
+                                - 开灯: {"device":"light", "rooms": ["living room"],"action": "set_power", "value":"on"}
+                                - 关灯: {"device":"light", "rooms": ["bed room"], "action": "set_power", "value":"off"}
+                                - 调整亮度(范围0-100,最亮是100): {"device":"light", "rooms": ["living room"],"action": "adjust_brightness", "value": 70}
+                                - 调整色温(范围2700-6000,从暖光到冷光): {"device":"light", "rooms": ["bathroom"], "action": "adjust_color_temperature", "value": 3000}
+
+                                5. 如果用户询问与饭有关的问题, 可以查询米家电饭煲的信息。  
+                                - 查询: {"device":"Rice Cooker", "rooms": ["kitchen"], "action": "check_status", "value":""}
+
+                                6. 如果用户要求打印内容, 请生成一个包含打印内容的 JSON 格式动作, 例如:
+                                {"device": "printer", "action": "print", "content": "需要打印的内容"}
+
+                                7. 如果用户询问需要到外部知识库搜索和查询（如当前天气、汇率等与时间相关的问题）, 请生成一个包含要搜索内容的 JSON 格式动作并提醒用户你生成了该动作, 但不直接执行查询。例如:  
+                                {"device": "ddg", "action": "search", "content": "需要搜索的内容"}  
+                                然后提示用户可以根据生成的动作调用查询。
+
+                                8. 在生成JSON格式的agent动作时, 请确保将其放在单独的一行, 并用大括号{}包围。
                             """,
+
+            # init_chat_prompt= minsprompts
         ):
 
         # 让系统选择是CPU还是GPU
-        if device is None:
-            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        if torch.cuda.is_available() and gpu_id < torch.cuda.device_count():
+            device = f"cuda:{gpu_id}"
+        else:
+            logger.warning(f"Specified GPU {gpu_id} is not available. Using default device.")
+            device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.device = device
 
@@ -62,25 +93,81 @@ class LargeLanguageModelHandler(BaseHandler):
         logger.info(f"LLM {model_name} will be assigned to device {self.device}")
 
         # 加载与指定模型对应的分词器（Tokenizer）（从 Hugging Face 的模型库或本地路径）
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name,trust_remote_code=True)
 
-        # 加载模型，指定模型的计算精度（数据类型），在指定设备上运行
-        self.model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=torch_dtype,
-            trust_remote_code=True
-        ).to(device)
+        ##################################################################################
+        # if model_name == "THUDM/glm-4v-9b":
+        if model_name == "Qwen/Qwen2-7B-Instruct":
+
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                load_in_4bit=True,  # 或 load_in_4bit=True, 视具体情况而定
+                device_map="auto",  # 自动分配设备
+                trust_remote_code=True,
+            )
+
+            # 文本生成管道
+            self.pipe = pipeline( 
+                "text-generation", 
+                model=self.model, 
+                tokenizer=self.tokenizer, 
+                torch_dtype="auto", 
+                max_new_tokens = 256,  # 设置生成的新 maxtoken 数量 输出序列太长会导致TTS处理不过来
+                min_new_tokens = 10  # 设置生成的新 mintoken 数量
+            ) 
+        else:
+            # # 加载模型，指定模型的计算精度（数据类型），在指定设备上运行
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name,
+                torch_dtype=torch_dtype,
+                low_cpu_mem_usage=True,
+                trust_remote_code=True,
+            ).to(device)
+    
+
+            # 文本生成管道
+            self.pipe = pipeline( 
+                "text-generation", 
+                device=device,
+                model=self.model, 
+                tokenizer=self.tokenizer, 
+                torch_dtype="auto", 
+                max_new_tokens = 256,  # 设置生成的新 maxtoken 数量 输出序列太长会导致TTS处理不过来
+                min_new_tokens = 10  # 设置生成的新 mintoken 数量
+            ) 
+        ##################################################################################
+
+        # 16G 内存不够了，加载模型，启用8-bit量化
+        # 配置 8-bit 量化
+        # quantization_config = BitsAndBytesConfig(load_in_8bit=True)
+
+        # # 加载模型，启用量化
+        # self.model = AutoModelForCausalLM.from_pretrained(
+        #     model_name,
+        #     quantization_config=quantization_config,
+        #     trust_remote_code=True
+        # )
+
+        # # please install AutoGPTQ following the readme to use quantization
+        # from auto_gptq import AutoGPTQForCausalLM
+        # model = AutoGPTQForCausalLM.from_quantized(
+        #     "Qwen/Qwen-7B-Chat-Int4", 
+        #     device="cuda:0", 
+        #     trust_remote_code=True, 
+        #     use_safetensors=True, 
+        #     use_flash_attn=False
+        # ).eval()
         
-        # 文本生成管道
-        self.pipe = pipeline( 
-            "text-generation", 
-            device=device,
-            model=self.model, 
-            tokenizer=self.tokenizer, 
-            torch_dtype="auto", 
-            max_new_tokens = 512,  # 设置生成的新 maxtoken 数量 输出序列太长会导致TTS处理不过来
-            min_new_tokens = 10  # 设置生成的新 mintoken 数量
-        ) 
+        # # 文本生成管道
+        # self.pipe = pipeline( 
+        #     "text-generation", 
+        #     model=self.model, 
+        #     tokenizer=self.tokenizer, 
+        #     torch_dtype="auto", 
+        #     max_new_tokens = 512,  # 设置生成的新 maxtoken 数量 输出序列太长会导致TTS处理不过来
+        #     min_new_tokens = 10  # 设置生成的新 mintoken 数量
+        # ) 
+        ##################################################################################
 
         # 流式输出，处理生成的文本
         # 用于逐步处理文本生成任务中的输出。在文本生成的过程中逐个处理生成的 token，不是等待整个文本生成完毕。
@@ -163,13 +250,26 @@ class LargeLanguageModelHandler(BaseHandler):
             # 检查是否有 agent 动作
             agent_action, remaining_text = self.extract_agent_action(printable_text)
             if agent_action:
-                self.send_json_to_frontend(agent_action)
+                if agent_action.get('device') == 'ddg' and agent_action.get('action') == 'search':
+                    search_query = agent_action.get('content', '')
+                    search_summary = self.search_agent_action(search_query)
+                    
+                    # 移除可能包含的 prompt
+                    cleaned_summary = self.clean_summary(search_summary)
+                    
+                    if cleaned_summary:
+                        yield f"请稍等，我需要搜索外部知识库：{cleaned_summary}"
+                        self.send_json_to_frontend({"action": "search_result", "summary": cleaned_summary})
+                else:
+                    self.send_json_to_frontend(agent_action)
                 printable_text = remaining_text  # 保留非 JSON 部分的文本
-
-            sentences = sent_tokenize(printable_text)
-            while len(sentences) > 1:
-                yield sentences.pop(0)
-            printable_text = sentences[0] if sentences else ""
+            else:
+                sentences = sent_tokenize(printable_text)
+                while len(sentences) > 1:
+                    sentence = sentences.pop(0)
+                    if not self.is_json_like(sentence):  # 添加这个检查
+                        yield sentence
+                printable_text = sentences[0] if sentences else ""
 
         self.chat.append(
             {"role": "assistant", "content": generated_text}
@@ -178,6 +278,30 @@ class LargeLanguageModelHandler(BaseHandler):
         # 输出最后的句子
         if printable_text:
             yield printable_text
+
+    def clean_summary(self, summary):
+        # 移除可能的提示内容
+        cleaned = summary.replace("以下是关于", "").replace("的搜索结果。请总结重要信息", "")
+        cleaned = cleaned.replace("请提供一个简洁的总结,最好不要超过100个字,其中包括最重要的信息和任何相关的日期或事实。", "")
+        
+        # 移除可能的前缀
+        prefixes_to_remove = [
+            "搜索结果总结：",
+            "总结：",
+            "简要总结：",
+            "概括：",
+        ]
+        for prefix in prefixes_to_remove:
+            if cleaned.startswith(prefix):
+                cleaned = cleaned[len(prefix):].strip()
+        
+        # 移除可能的 JSON 格式内容
+        cleaned = re.sub(r'\{.*?\}', '', cleaned)
+        
+        # 移除多余的空白字符
+        cleaned = ' '.join(cleaned.split())
+        
+        return cleaned.strip()
 
     def extract_agent_action(self, text):
         # 使用正则表达式查找 JSON 格式的 agent 动作
@@ -194,3 +318,45 @@ class LargeLanguageModelHandler(BaseHandler):
                 continue
         
         return None, text
+
+    def is_json_like(self, text):
+        return text.strip().startswith('{') and text.strip().endswith('}')
+
+    def search_agent_action(self, query):
+        search_results = search_agent(query)
+        
+        # 准备提示
+        prompt = (
+            f"你现在有关于'{query}'的搜索结果。请从中提取出最重要的信息，并简洁地总结。\n\n"
+            "以下是搜索结果的简要概述：\n"
+        )
+
+        for result in search_results[:5]:  # 限制前5个结果
+            prompt += f"- {result['title']}:\n  {result['body']}\n"
+
+        prompt += (
+            "\n请基于以上信息，撰写一个不超过100字的总结，包含最关键的事实、日期或其他相关细节，"
+            "帮助用户快速了解最重要的信息。请保持语言简洁易懂。"
+        )
+
+        # 使用语言模型生成总结，并只返回生成的文本部分
+        summary = self.generate_response(prompt).strip()  # 清除多余的空格和换行符
+        return summary
+
+    def generate_response(self, prompt):
+        self.chat.append({"role": "user", "content": prompt})
+        
+        thread = Thread(target=self.pipe, args=(self.chat.to_list(),), kwargs=self.gen_kwargs)
+        thread.start()
+
+        generated_text = ""
+        for new_text in self.streamer:
+            generated_text += new_text
+
+        self.chat.append({"role": "assistant", "content": generated_text})
+
+        # 移除可能的提示内容
+        response = generated_text.replace(prompt, "").strip()
+        
+        return response
+

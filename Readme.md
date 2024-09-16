@@ -9,7 +9,7 @@
 可以使用localhost或127.0.0.1（它们被认为是安全的环境）进行测试。
 
 
-
+##### 在server 端
 
 调试的时候一定要是用https该如何处理
 
@@ -31,3 +31,8 @@ if __name__ == '__main__':
 
 
 3 使用https 访问 https://<iP>:8888/
+
+#####  在client 上需要添加证书  （这里以windows 为例）
+1 下载cert.pem 到本地
+
+![alt text](image-3.png)

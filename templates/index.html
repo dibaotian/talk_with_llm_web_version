@@ -60,14 +60,46 @@
         let workletNode; 
         let stream;
 
+        function sendData(data) {
+
+            fetch('https://192.168.71.13:5000/receive_data', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Success:', data);
+            })
+            .catch((error) => {
+                console.error('Error:', error);
+            });
+        }
+
         socket.on('agent_action', (data) => {
             console.log('Received agent action:', data);
             // 根据 agent 动作执行相应的操作
             if (data.action === 'check_temperature') {
                 appendMessage('Agent', `Checking temperature in rooms: ${data.rooms.join(', ')}`, 'agent-message');
+            }else if (data.device === 'light') {
+                appendMessage('Agent', `Light action: ${data.rooms.join(', ')}, ${data.action} ${data.value}`, 'agent-message');
+            }else if (data.action === 'adjust_light') {
+                appendMessage('Agent', `Light action: ${data}`, 'agent-message');
             } else if (data.action === 'use_tool') {
                 appendMessage('Agent', `Using tool: ${data.tool_name} with input: ${data.input}`, 'agent-message');
             }
+
+            if (data.device === 'printer') {
+                appendMessage('Agent', `print action`, 'agent-message');
+            }
+
+            if (data.device === 'ddg') {
+                appendMessage('Agent', `search action: ${data.content}`, 'agent-message');
+            }
+
+            sendData(data)
             // 添加更多的 agent 动作处理逻辑
         });
 
