@@ -58,21 +58,21 @@ class LargeLanguageModelHandler(BaseHandler):
                                 3. 如果用户询问家里的温度情况或者说有点热, 请说出你的想法。如果你认为有必要调用工具, 请生成一个 JSON 格式的agent动作, 例如:
                                 {"action": "check_temperature", "rooms": ["living_room", "bedroom"]}
 
-                                4. 如果用户询问家里的灯光或光线问题, 请先表达你的想法。如果你认为有必要调用工具, 请生成一个 JSON 格式的agent动作, 例如:  
+                                4. 如果用户询问家里的灯光或光线问题, 请先表达你的想法。如果你认为有必要调用工具, 请生成一个 JSON 格式的agent动作, 如下:  
                                 - 开灯: {"device":"light", "rooms": ["living room"],"action": "set_power", "value":"on"}
                                 - 关灯: {"device":"light", "rooms": ["bed room"], "action": "set_power", "value":"off"}
                                 - 调整亮度(范围0-100,最亮是100): {"device":"light", "rooms": ["living room"],"action": "adjust_brightness", "value": 70}
                                 - 调整色温(范围2700-6000,从暖光到冷光): {"device":"light", "rooms": ["bathroom"], "action": "adjust_color_temperature", "value": 3000}
 
-                                5. 如果用户询问与饭有关的问题, 可以查询米家电饭煲的信息。  
+                                5. 如果用户询问与饭有关的问题, 如果你认为有必要调用工具, 可以生成一个查询米家电饭煲的信息的JSON格式的agent动作  
                                 - 查询: {"device":"Rice Cooker", "rooms": ["kitchen"], "action": "check_status", "value":""}
 
-                                6. 如果用户要求打印内容, 请生成一个包含打印内容的 JSON 格式动作, 例如:
+                                6. 如果用户要求打印内容, 如果你认为有必要调用工具, 请生成一个包含打印内容的 JSON 格式动作, 如下:
                                 {"device": "printer", "action": "print", "content": "需要打印的内容"}
 
-                                7. 如果用户询问需要到外部知识库搜索和查询（如当前天气、汇率等与时间相关的问题）, 请生成一个包含要搜索内容的 JSON 格式动作并提醒用户你生成了该动作, 但不直接执行查询。例如:  
+                                7. 如果你判断用户询问需要到外部知识库获取,例如是提到搜索的时候(如搜索当前天气、汇率等与时间相关的问题, 请生成一个包含要搜索内容的 JSON 格式动作并提醒用户你生成了该动作。例如:  
                                 {"device": "ddg", "action": "search", "content": "需要搜索的内容"}  
-                                然后提示用户可以根据生成的动作调用查询。
+                                然后可以调用搜索的agent
 
                                 8. 在生成JSON格式的agent动作时, 请确保将其放在单独的一行, 并用大括号{}包围。
                             """,
@@ -247,19 +247,19 @@ class LargeLanguageModelHandler(BaseHandler):
             generated_text += new_text
             printable_text += new_text
 
+            print(printable_text)
+
             # 检查是否有 agent 动作
             agent_action, remaining_text = self.extract_agent_action(printable_text)
+
             if agent_action:
                 if agent_action.get('device') == 'ddg' and agent_action.get('action') == 'search':
+                    print("search")
                     search_query = agent_action.get('content', '')
+                    print(search_query)
                     search_summary = self.search_agent_action(search_query)
-                    
-                    # 移除可能包含的 prompt
-                    cleaned_summary = self.clean_summary(search_summary)
-                    
-                    if cleaned_summary:
-                        yield f"请稍等，我需要搜索外部知识库：{cleaned_summary}"
-                        self.send_json_to_frontend({"action": "search_result", "summary": cleaned_summary})
+                    yield f"请稍等，我需要搜索外部知识库:"
+                    self.send_json_to_frontend(agent_action)
                 else:
                     self.send_json_to_frontend(agent_action)
                 printable_text = remaining_text  # 保留非 JSON 部分的文本
@@ -335,7 +335,7 @@ class LargeLanguageModelHandler(BaseHandler):
             prompt += f"- {result['title']}:\n  {result['body']}\n"
 
         prompt += (
-            "\n请基于以上信息，撰写一个不超过100字的总结，包含最关键的事实、日期或其他相关细节，"
+            "\n请基于以上信息,撰写一个不超过100字的总结,包含最关键的事实、日期或其他相关细节，"
             "帮助用户快速了解最重要的信息。请保持语言简洁易懂。"
         )
 

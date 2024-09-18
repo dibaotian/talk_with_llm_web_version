@@ -4,12 +4,13 @@ class DuckDuckGoSearch:
     def __init__(self):
         self.ddgs = DDGS()
 
-    def search(self, query, region='cn-zh', max_results=10):
-        results = list(self.ddgs.text(query, region=region, max_results=max_results))
+    def search(self, query, region='cn-zh', timelimit="d", max_results=10):
+        # results = list(self.ddgs.text(query, region=region, max_results=max_results))
+        results = list(self.ddgs.news(query, region=region, timelimit=timelimit, max_results=max_results))
         return results
 
-    def __call__(self, query, region='cn-zh', max_results=10):
-        return self.search(query, region, max_results)
+    def __call__(self, query, region='cn-zh', timelimit = "d",max_results=10):
+        return self.search(query, region, timelimit, max_results)
 
 # 创建一个全局实例
 search_agent = DuckDuckGoSearch()

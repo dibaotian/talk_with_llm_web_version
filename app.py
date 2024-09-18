@@ -95,7 +95,7 @@ class SendAudioHandler:
 
 
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 socketio = SocketIO(app)
 
 UPLOAD_FOLDER = 'uploads'
