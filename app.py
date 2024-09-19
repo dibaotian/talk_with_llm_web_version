@@ -1,7 +1,9 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO
 import wave
 import base64
+from PIL import Image
+from io import BytesIO
 
 import os
 import torch
@@ -167,6 +169,21 @@ def stop_recording():
 
             # 清空音频数据列表
             audio_data_list = []
+
+@socketio.on('camera_status', namespace='/chat')
+def handle_camera_status(data):
+    status = data['status']
+    # 在这里处理摄像头状态更新
+    print(f"Camera status: {status}")
+    
+@socketio.on('video_frame', namespace='/chat')
+def handle_video_frame(data):
+    image_data = data['frame'].split(',')[1]  # 移除 data URL 前缀
+    image = Image.open(BytesIO(base64.b64decode(image_data)))
+    # 在这里处理图像
+    print("Received a video frame")
+    # 如果需要，可以在这里进行图像处理或保存图像
+    # image.save('received_frame.jpg')
 
 def main():
    

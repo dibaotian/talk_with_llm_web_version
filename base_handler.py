@@ -1,6 +1,7 @@
 from time import perf_counter
 
 import logging
+import queue
 logger = logging.getLogger(__name__)
 
 class BaseHandler:

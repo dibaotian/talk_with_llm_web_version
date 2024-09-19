@@ -35,6 +35,14 @@
             background-color: #fff9e6;
             color: #b8860b; /* Dark goldenrod */
         }
+        #video-container {
+            margin-top: 20px;
+        }
+        #video {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+        }
     </style>
 
 </head>
@@ -47,6 +55,13 @@
         <div id="chat-messages"></div>
         <button id="start">Start Chat</button>
         <button id="stop" disabled>Stop Chat</button>
+        
+        <div id="video-container">
+            <video id="video" autoplay playsinline></video>
+            <br>
+            <button id="start-camera">打开摄像头</button>
+            <button id="stop-camera" disabled>关闭摄像头</button>
+        </div>
     </div>
 
     <script>
@@ -58,7 +73,7 @@
         let isPlaying = false; // 播放状态标志
         let audioQueue = []; // 用于存储待播放的音频数据
         let workletNode; 
-        let stream;
+        let audio_stream;
 
         function sendData(data) {
 
@@ -78,6 +93,7 @@
             });
         }
 
+        // web proxy if need https home mijia service
         socket.on('agent_action', (data) => {
             console.log('Received agent action:', data);
             // 根据 agent 动作执行相应的操作
@@ -113,11 +129,10 @@
         async function startRecording() {
 
             if (isRecording) return; // 如果已经在录音，直接返回
-
             try {
-                    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    audio_stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                     audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-                    mediaStreamSource = audioContext.createMediaStreamSource(stream);
+                    mediaStreamSource = audioContext.createMediaStreamSource(audio_stream);
                      // 加载 AudioWorklet
                     await audioContext.audioWorklet.addModule('/static/audio-processor.js');
                     workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
@@ -136,8 +151,8 @@
             //     audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 设置采样频率为 16 kHz
             // }
 
-            // const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // mediaStreamSource = audioContext.createMediaStreamSource(stream);
+            // const audio_stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            // mediaStreamSource = audioContext.createMediaStreamSource(audio_stream);
 
             // // 加载 AudioWorklet
             // await audioContext.audioWorklet.addModule('/static/audio-processor.js');
@@ -166,7 +181,7 @@
             if (!isRecording) return;
 
             // 停止所有音轨
-            stream.getTracks().forEach(track => track.stop());
+            audio_stream.getTracks().forEach(track => track.stop());
 
             // 断开音频节点连接
             if (mediaStreamSource) {
@@ -193,13 +208,21 @@
         });
 
         socket.on('llm_response', (data) => {
-            appendMessage('LLM', data.text, 'llm-message');
+            if (data.text.startsWith('<img')) {
+                appendMessage('LLM', data.text, 'llm-message', true);
+            } else {
+                appendMessage('LLM', data.text, 'llm-message');
+            }
         });
 
-        function appendMessage(sender, text, className) {
+        function appendMessage(sender, text, className, isHTML = false) {
             const messageElement = document.createElement('div');
             messageElement.className = `message ${className}`;
-            messageElement.textContent = `${sender}: ${text}`;
+            if (isHTML) {
+                messageElement.innerHTML = `${sender}: ${text}`;
+            } else {
+                messageElement.textContent = `${sender}: ${text}`;
+            }
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
@@ -299,6 +322,40 @@
                 console.log('Recording stopped.'); // 记录停止信息
             }
         };
+
+        const video = document.getElementById('video');
+        const startButton = document.getElementById('start-camera');
+        const stopButton = document.getElementById('stop-camera');
+        let video_stream;
+
+        startButton.addEventListener('click', startCamera);
+        stopButton.addEventListener('click', stopCamera);
+
+        async function startCamera() {
+            try {
+                video_stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = video_stream;
+                startButton.disabled = true;
+                stopButton.disabled = false;
+
+                socket.emit('camera_status', { status: 'on' });  // 当摄像头打开时
+                console.log('startCamera.');
+            } catch (err) {
+                console.error("Error accessing the camera", err);
+            }
+        }
+
+        function stopCamera() {
+            if (video_stream) {
+                video_stream.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+                startButton.disabled = false;
+                stopButton.disabled = true;
+
+                socket.emit('camera_status', { status: 'off' });  // 当摄像头关闭的时候
+                console.log('stopCamera.');
+            }
+        }
 
     </script>
 </body>
