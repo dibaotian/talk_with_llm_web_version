@@ -43,6 +43,7 @@ class VADHandler(BaseHandler):
         # 在每个线程中加载模型
         self.model, _ = torch.hub.load('snakers4/silero-vad', 'silero_vad')
 
+        # set the process to GPU cause VAD can not work properly
         # self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         # logger.info("VAD will be asign to {self.device}")
         # self.model = self.model.to(self.device)

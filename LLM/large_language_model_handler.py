@@ -48,49 +48,24 @@ class LargeLanguageModelHandler(BaseHandler):
             # model_name ="THUDM/glm-4v-9b",
             # model_name ="Qwen/Qwen2-7B-Instruct-GPTQ-Int4", # load fail
             # model_name ="Qwen/Qwen2-7B-Instruct-GPTQ-Int8",  # too slow in v100
-            device = None,  # let system select
-            gpu_id = 0,  # 新增参数，默认使用第一个 GPU
-            torch_dtype = "auto",
+            device = "cuda:0",  # let system select
+            # torch_dtype = "auto",
+            torch_dtype = torch.float16,
             # gen_kwargs={'return_full_text': False, 'temperature': 0.7, 'do_sample': False},
             gen_kwargs={'return_full_text': False,'do_sample': True},
             user_role="user",
             chat_size=10,
             init_chat_role="user", 
-            # init_chat_prompt="""1. 你是一个AI家庭助手, 你的名字叫Joey或者周一, 你可以提供家庭生活中的帮助, 你的回答应简洁明了, 并以友好、轻松、可爱的口吻回应用户的问题。
-   
-            #                     2. 判断是否是技术性问题的回答, 如果是技术性问题, 可以回答得详细一点。对于一般常识性问题的回答, 最好不要超过100个字符。你可以使用多种agent, 比如控制家里的电器, 上网查询, 控制打印机等, 你可以根据需要判断是否要使用这些agent。
-
-            #                     3. 如果用户询问家里的温度情况或者说有点热, 请说出你的想法。如果你认为有必要调用工具, 请生成一个 JSON 格式的agent动作, 例如:
-            #                     {"action": "check_temperature", "rooms": ["living_room", "bedroom"]}
-
-            #                     4. 如果用户询问家里的灯光或光线问题, 请先表达你的想法。如果你认为有必要调用工具, 请生成一个 JSON 格式的agent动作, 如下:  
-            #                     - 开灯: {"device":"light", "rooms": ["living room"],"action": "set_power", "value":"on"}
-            #                     - 关灯: {"device":"light", "rooms": ["bed room"], "action": "set_power", "value":"off"}
-            #                     - 调整亮度(范围0-100,最亮是100): {"device":"light", "rooms": ["living room"],"action": "adjust_brightness", "value": 70}
-            #                     - 调整色温(范围2700-6000,从暖光到冷光): {"device":"light", "rooms": ["bathroom"], "action": "adjust_color_temperature", "value": 3000}
-
-            #                     5. 如果用户询问与饭有关的问题, 如果你认为有必要调用工具, 可以生成一个查询米家电饭煲的信息的JSON格式的agent动作  
-            #                     - 查询: {"device":"Rice Cooker", "rooms": ["kitchen"], "action": "check_status", "value":""}
-
-            #                     6. 如果用户要求打印内容, 如果你认为有必要调用工具, 请生成一个包含打印内容的 JSON 格式动作, 如下:
-            #                     {"device": "printer", "action": "print", "content": "需要打印的内容"}
-
-            #                     7. 如果你判断用户询问需要到外部知识库获取,例如是提到搜索的时候(如搜索当前天气、汇率等与时间相关的问题, 请生成一个包含要搜索内容的 JSON 格式动作并提醒用户你生成了该动作。例如:  
-            #                     {"device": "ddg", "action": "search", "content": "需要搜索的内容"}  
-            #                     然后可以调用搜索的agent
-
-            #                     8. 在生成JSON格式的agent动作时, 请确保将其放在单独的一行, 并用大括号{}包围。
-            #                 """,
 
             init_chat_prompt= minsprompts
         ):
 
         # 让系统选择是CPU还是GPU
-        if torch.cuda.is_available() and gpu_id < torch.cuda.device_count():
-            device = f"cuda:{gpu_id}"
-        else:
-            logger.warning(f"Specified GPU {gpu_id} is not available. Using default device.")
-            device = "cuda" if torch.cuda.is_available() else "cpu"
+        # if torch.cuda.is_available() and gpu_id < torch.cuda.device_count():
+        #     device = f"cuda:{gpu_id}"
+        # else:
+        #     logger.warning(f"Specified GPU {gpu_id} is not available. Using default device.")
+        #     device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.device = device
 
@@ -107,7 +82,8 @@ class LargeLanguageModelHandler(BaseHandler):
             self.model = AutoModelForCausalLM.from_pretrained(
                 model_name,
                 load_in_4bit=True,  # 或 load_in_4bit=True, 视具体情况而定
-                device_map="auto",  # 自动分配设备
+                # device_map="auto",  # 自动分配设备
+                device_map={"": "cuda:0"},  # 指定模型在 GPU0 上运行
                 trust_remote_code=True,
             )
 

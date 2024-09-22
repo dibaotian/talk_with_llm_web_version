@@ -57,6 +57,7 @@
         <button id="stop" disabled>Stop Chat</button>
         
         <div id="video-container">
+            <!-- <video id="video" autoplay playsinline style="display: none;"></video> -->
             <video id="video" autoplay playsinline></video>
             <br>
             <button id="start-camera">打开摄像头</button>
@@ -67,6 +68,16 @@
     <script>
 
         const socket = io();
+        // const socket = io('/chat');
+
+        // socket.on('connect', () => {
+        //     console.log('Connected to server');
+        // });
+
+        // socket.on('connect_error', (error) => {
+        //     console.error('Connection error:', error);
+        // });
+
         let audioContext;
         let mediaStreamSource;
         let isRecording = false; // 录音状态标志
@@ -323,38 +334,94 @@
             }
         };
 
+        // video process
+        // 获取视频元素
         const video = document.getElementById('video');
         const startButton = document.getElementById('start-camera');
         const stopButton = document.getElementById('stop-camera');
-        let video_stream;
+
+        let captureInterval;
+        let frameCount = 0;
+        let canvas, context
+        const targetFPS = 10; // 目标帧率
+        const targetWidth = 720; // 目标宽度
+        const targetHeight = 480; // 目标高度
+
+        
+        // 创建离屏 canvas
+        canvas = document.createElement('canvas');
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        context = canvas.getContext('2d');
 
         startButton.addEventListener('click', startCamera);
         stopButton.addEventListener('click', stopCamera);
 
         async function startCamera() {
             try {
-                video_stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                video.srcObject = video_stream;
-                startButton.disabled = true;
-                stopButton.disabled = false;
+                const constraints = {
+                    video: { 
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 },
+                        frameRate: { ideal: 30 }
+                    }
+                };
 
-                socket.emit('camera_status', { status: 'on' });  // 当摄像头打开时
-                console.log('startCamera.');
+                const video_stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = video_stream;
+
+                video.onloadedmetadata = function(e) {
+                    video.play()
+                        .then(() => {
+                            console.log('Video playback started');
+                            startButton.disabled = true;
+                            stopButton.disabled = false;
+                            startCapturing();
+                            socket.emit('camera_status', { status: 'on' });
+                            console.log('startCamera.');
+                        })
+                        .catch(err => {
+                            console.error('Error playing video:', err);
+                        });
+                }
             } catch (err) {
                 console.error("Error accessing the camera", err);
+                if (err.name === 'NotReadableError') {
+                    alert('Camera is in use by another application. Please close other applications using the camera and try again.');
+                } else if (err.name === 'NotAllowedError') {
+                    alert('Camera access was denied. Please allow camera access and try again.');
+                } else {
+                    alert('An error occurred while trying to access the camera: ' + err.message);
+                }
             }
         }
 
         function stopCamera() {
-            if (video_stream) {
-                video_stream.getTracks().forEach(track => track.stop());
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
                 video.srcObject = null;
                 startButton.disabled = false;
                 stopButton.disabled = true;
+                stopCapturing();
 
                 socket.emit('camera_status', { status: 'off' });  // 当摄像头关闭的时候
                 console.log('stopCamera.');
             }
+        }
+
+        function startCapturing() {
+            captureInterval = setInterval(() => {
+                // 将视频帧绘制到 canvas 上，自动进行缩放
+                context.drawImage(video, 0, 0, targetWidth, targetHeight);
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                socket.emit('video_frame', { frame: imageData, frameCount: frameCount % 100 });
+                frameCount++;
+            }, 1000 / targetFPS);  // 每秒捕获 targetFPS 帧
+        }
+
+        function stopCapturing() {
+            clearInterval(captureInterval);
+            frameCount = 0;
         }
 
     </script>

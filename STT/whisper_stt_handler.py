@@ -27,7 +27,7 @@ class WhisperSTTHandler(BaseHandler):
     def setup(
             self,
             model_name="openai/whisper-large-v3",
-            device="cuda:1",  
+            device="cuda:0",  
             torch_dtype="float16",  
             compile_mode=None,
             gen_kwargs={}
@@ -39,8 +39,8 @@ class WhisperSTTHandler(BaseHandler):
         self.socketio = None  # 添加这一行
 
         # 确定设备
-        # I have two gpu, I want to assign it to second one
-        self.device = torch.device('cuda:1' if torch.cuda.is_available() else 'cpu')
+        # I have two gpu, I want to assign it to first one
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
         logger.info("VAD will be asign to {self.device}")
 

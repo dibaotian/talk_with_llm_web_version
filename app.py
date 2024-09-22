@@ -33,6 +33,18 @@ logger = logging.getLogger(__name__)
 logger = logging.getLogger("Server_logger")
 # logger.setLevel(logging.DEBUG)
 
+# 确保存储图片的文件夹存在
+# 使用绝对路径
+# FRAME_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static', 'frames')
+# os.makedirs(FRAME_FOLDER, exist_ok=True)
+
+# 确保存储图片的文件夹存在
+FRAME_FOLDER = 'static/frames'
+os.makedirs(FRAME_FOLDER, exist_ok=True)
+
+# 检查文件夹权限
+if not os.access(FRAME_FOLDER, os.W_OK):
+    logger.error(f"No write permission for folder: {FRAME_FOLDER}")
 
 class ThreadManager:
     """
@@ -170,20 +182,36 @@ def stop_recording():
             # 清空音频数据列表
             audio_data_list = []
 
-@socketio.on('camera_status', namespace='/chat')
+@socketio.on('camera_status')
 def handle_camera_status(data):
     status = data['status']
     # 在这里处理摄像头状态更新
     print(f"Camera status: {status}")
+
+# 使用deque来存储最近10个文件名
+# recent_files = deque(maxlen=10)
     
-@socketio.on('video_frame', namespace='/chat')
+@socketio.on('video_frame')
 def handle_video_frame(data):
-    image_data = data['frame'].split(',')[1]  # 移除 data URL 前缀
-    image = Image.open(BytesIO(base64.b64decode(image_data)))
-    # 在这里处理图像
-    print("Received a video frame")
-    # 如果需要，可以在这里进行图像处理或保存图像
-    # image.save('received_frame.jpg')
+    logger.debug(f"Received frame {data['frameCount']}")
+    try:
+        image_data = data['frame'].split(',')[1]  # 移除 data URL 前缀
+        frame_count = data['frameCount']
+        
+        image = Image.open(BytesIO(base64.b64decode(image_data)))
+        
+        # # 确保图像大小为 1280x720
+        # if image.size != (1920, 480):
+        #     image = image.resize((720, 480), Image.LANCZOS)
+        
+        # 保存图片，使用frame_count作为文件名的一部分
+        filename = f'frame_{frame_count:03d}.jpg'
+        filepath = os.path.join(FRAME_FOLDER, filename)
+        image.save(filepath, quality=95, optimize=True)
+        
+        logger.info(f"Saved frame {frame_count} to {filepath}")
+    except Exception as e:
+        logger.error(f"Error processing frame: {e}")
 
 def main():
    

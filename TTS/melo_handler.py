@@ -38,7 +38,7 @@ class MeloTTSHandler(BaseHandler):
     def setup(
         self,
         should_listen,
-        device="cuda:1",
+        device="cuda:0",
         language="zh",
         speaker_to_id="zh",
         gen_kwargs={},  # Unused
