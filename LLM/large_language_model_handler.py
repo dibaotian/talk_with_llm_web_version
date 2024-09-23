@@ -226,7 +226,7 @@ class LargeLanguageModelHandler(BaseHandler):
                     yield f"请稍等，我仔细看一下:"
                     vision_summary = self.vision_analysis_agent(vision_query)
                     remaining_text = f"\n{vision_summary}\n"  # 合并视觉分析结果
-                    print(remaining_text)
+                    # print(remaining_text)
                     self.send_json_to_frontend(agent_action)
                 else:
                     self.send_json_to_frontend(agent_action)
@@ -246,6 +246,7 @@ class LargeLanguageModelHandler(BaseHandler):
         )
 
          # 输出最后的句子
+        print(printable_text)
         if printable_text:
             yield printable_text
 
