@@ -11,6 +11,7 @@ class SendAudioHandler:
     """
     Handles streaming audio data to clients via SocketIO.
     """
+    print("instantiation the SendAudioHandler")
 
     def __init__(self, stop_event, queue_in):
         self.stop_event = stop_event

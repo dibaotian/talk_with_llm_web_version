@@ -217,10 +217,10 @@ def main():
    
     # 测试日志是否正常打印
     # logger.info("安装funasr后需要使用自定义日志记录器。")
+    print("Start the server")
 
     torch.cuda.empty_cache()
     os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-
 
     vad = VADHandler(
         stop_event,

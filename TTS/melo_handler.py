@@ -35,6 +35,8 @@ WHISPER_LANGUAGE_TO_MELO_SPEAKER = {
 
 
 class MeloTTSHandler(BaseHandler):
+
+
     def setup(
         self,
         should_listen,
@@ -47,6 +49,7 @@ class MeloTTSHandler(BaseHandler):
         self.should_listen = should_listen
         self.device = device
         self.language = language
+        print("load the MeloTTS model")
         self.model = TTS(
             language=WHISPER_LANGUAGE_TO_MELO_LANGUAGE[self.language], device=device
         )

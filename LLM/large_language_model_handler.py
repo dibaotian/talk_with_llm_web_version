@@ -39,7 +39,7 @@ class LargeLanguageModelHandler(BaseHandler):
     Handles the language model part. 
     Here I use Qwen2-7B
     """
-
+    
     def __init__(self, stop_event, queue_in, queue_out):
         super().__init__(stop_event, queue_in, queue_out)
         self.socketio = None
@@ -78,10 +78,12 @@ class LargeLanguageModelHandler(BaseHandler):
         logger.info(f"LLM {model_name} will be assigned to device {self.device}")
 
         # 加载与指定模型对应的分词器（Tokenizer）（从 Hugging Face 的模型库或本地路径）
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name,trust_remote_code=True)
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name,trust_remote_code=True,clean_up_tokenization_spaces=True)
 
         ##################################################################################
         # if model_name == "THUDM/glm-4v-9b":
+        print("load the Qwen2-7B model")
+        
         if model_name == "Qwen/Qwen2.5-7B-Instruct":
 
             self.model = AutoModelForCausalLM.from_pretrained(
@@ -108,6 +110,7 @@ class LargeLanguageModelHandler(BaseHandler):
                 torch_dtype=torch_dtype,
                 low_cpu_mem_usage=True,
                 trust_remote_code=True,
+                clean_up_tokenization_spaces=True,
             ).to(device)
     
 
@@ -226,7 +229,8 @@ class LargeLanguageModelHandler(BaseHandler):
                     yield f"请稍等，我仔细看一下:"
                     vision_summary = self.vision_analysis_agent(vision_query)
                     remaining_text = f"\n{vision_summary}\n"  # 合并视觉分析结果
-                    # print(remaining_text)
+                    print("vision_summary")
+                    print(vision_summary)
                     self.send_json_to_frontend(agent_action)
                 else:
                     self.send_json_to_frontend(agent_action)

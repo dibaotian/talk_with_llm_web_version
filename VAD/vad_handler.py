@@ -20,7 +20,6 @@ class VADHandler(BaseHandler):
     Here we can assign it to CPU or GPU, default is using CPU
     """
 
-
     def setup(
             self, 
             should_listen,
@@ -41,6 +40,7 @@ class VADHandler(BaseHandler):
          # 确定设备
          # I have two gpu, I want to assign it to first one
         # 在每个线程中加载模型
+        print("load the VAD model")
         self.model, _ = torch.hub.load('snakers4/silero-vad', 'silero_vad')
 
         # set the process to GPU cause VAD can not work properly

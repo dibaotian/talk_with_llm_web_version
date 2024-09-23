@@ -44,8 +44,9 @@ class WhisperSTTHandler(BaseHandler):
 
         logger.info("VAD will be asign to {self.device}")
 
-
-        self.processor = AutoProcessor.from_pretrained(model_name)
+        print("load the WhisperSTTmodel")
+        
+        self.processor = AutoProcessor.from_pretrained(model_name, clean_up_tokenization_spaces=True)
         self.model = AutoModelForSpeechSeq2Seq.from_pretrained(
             model_name,
             torch_dtype=self.torch_dtype,
