@@ -25,6 +25,9 @@ from LLM.prompt import minsprompts
 
 from LLM.ddg_search import DuckDuckGoSearch
 
+import requests
+import base64
+
 logger = logging.getLogger(__name__)
 
 console = Console()
@@ -48,7 +51,8 @@ class LargeLanguageModelHandler(BaseHandler):
             # model_name ="THUDM/glm-4v-9b",
             # model_name ="Qwen/Qwen2-7B-Instruct-GPTQ-Int4", # load fail
             # model_name ="Qwen/Qwen2-7B-Instruct-GPTQ-Int8",  # too slow in v100
-            device = "cuda:0",  # let system select
+            # device = "auto",  # let system select
+            device = "cuda:0",  # specific device
             # torch_dtype = "auto",
             torch_dtype = torch.float16,
             # gen_kwargs={'return_full_text': False, 'temperature': 0.7, 'do_sample': False},
@@ -68,6 +72,7 @@ class LargeLanguageModelHandler(BaseHandler):
         #     device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self.device = device
+        self.torch_dtype = torch_dtype
 
 
         logger.info(f"LLM {model_name} will be assigned to device {self.device}")
@@ -83,7 +88,7 @@ class LargeLanguageModelHandler(BaseHandler):
                 model_name,
                 load_in_4bit=True,  # 或 load_in_4bit=True, 视具体情况而定
                 # device_map="auto",  # 自动分配设备
-                device_map={"": "cuda:0"},  # 指定模型在 GPU0 上运行
+                device_map={"": device}, 
                 trust_remote_code=True,
             )
 
@@ -92,7 +97,7 @@ class LargeLanguageModelHandler(BaseHandler):
                 "text-generation", 
                 model=self.model, 
                 tokenizer=self.tokenizer, 
-                torch_dtype="auto", 
+                torch_dtype=self.torch_dtype, 
                 max_new_tokens = 256,  # 设置生成的新 maxtoken 数量 输出序列太长会导致TTS处理不过来
                 min_new_tokens = 10  # 设置生成的新 mintoken 数量
             ) 
@@ -116,39 +121,6 @@ class LargeLanguageModelHandler(BaseHandler):
                 max_new_tokens = 256,  # 设置生成的新 maxtoken 数量 输出序列太长会导致TTS处理不过来
                 min_new_tokens = 10  # 设置生成的新 mintoken 数量
             ) 
-        ##################################################################################
-
-        # 16G 内存不够了，加载模型，启用8-bit量化
-        # 配置 8-bit 量化
-        # quantization_config = BitsAndBytesConfig(load_in_8bit=True)
-
-        # # 加载模型，启用量化
-        # self.model = AutoModelForCausalLM.from_pretrained(
-        #     model_name,
-        #     quantization_config=quantization_config,
-        #     trust_remote_code=True
-        # )
-
-        # # please install AutoGPTQ following the readme to use quantization
-        # from auto_gptq import AutoGPTQForCausalLM
-        # model = AutoGPTQForCausalLM.from_quantized(
-        #     "Qwen/Qwen-7B-Chat-Int4", 
-        #     device="cuda:0", 
-        #     trust_remote_code=True, 
-        #     use_safetensors=True, 
-        #     use_flash_attn=False
-        # ).eval()
-        
-        # # 文本生成管道
-        # self.pipe = pipeline( 
-        #     "text-generation", 
-        #     model=self.model, 
-        #     tokenizer=self.tokenizer, 
-        #     torch_dtype="auto", 
-        #     max_new_tokens = 512,  # 设置生成的新 maxtoken 数量 输出序列太长会导致TTS处理不过来
-        #     min_new_tokens = 10  # 设置生成的新 mintoken 数量
-        # ) 
-        ##################################################################################
 
         # 流式输出，处理生成的文本
         # 用于逐步处理文本生成任务中的输出。在文本生成的过程中逐个处理生成的 token，不是等待整个文本生成完毕。
@@ -244,17 +216,28 @@ class LargeLanguageModelHandler(BaseHandler):
             if agent_action:
                 if agent_action.get('device') == 'ddg' and agent_action.get('action') == 'search':
                     search_query = agent_action.get('content', '')
-                    search_summary = self.search_agent_action(search_query)
                     yield f"请稍等，我需要搜索外部知识库:"
+                    search_summary = self.search_agent_action(search_query)
+                    printable_text += f"\n{search_summary}\n"  # 合并搜索结果
+                    self.send_json_to_frontend(agent_action)
+                elif agent_action.get('device') == 'vision' and agent_action.get('action') == 'analysis':
+                    vision_query = agent_action.get('content', '')
+                    print(vision_query)
+                    yield f"请稍等，我仔细看一下:"
+                    vision_summary = self.vision_analysis_agent(vision_query)
+                    remaining_text = f"\n{vision_summary}\n"  # 合并视觉分析结果
+                    print(remaining_text)
                     self.send_json_to_frontend(agent_action)
                 else:
                     self.send_json_to_frontend(agent_action)
+
+                
                 printable_text = remaining_text  # 保留非 JSON 部分的文本
             else:
                 sentences = sent_tokenize(printable_text)
                 while len(sentences) > 1:
                     sentence = sentences.pop(0)
-                    if not self.is_json_like(sentence):  # 添加这个检查
+                    if not self.is_json_like(sentence):  # 添加检查
                         yield sentence
                 printable_text = sentences[0] if sentences else ""
 
@@ -333,6 +316,47 @@ class LargeLanguageModelHandler(BaseHandler):
         # 使用语言模型生成总结，并只返回生成的文本部分
         summary = self.generate_response(prompt).strip()  # 清除多余的空格和换行符
         return summary
+    
+    def vision_analysis_agent(self,question):
+
+        print("vision_analysis_agent")
+
+        prompt = (
+            f"请用中文回答下面的问题',{question}'。"
+        )
+
+        # 服务的URL
+        url = "http://localhost:5000/analyze"
+        image_path = "/home/xilinx/Documents/talk_with_llm_web_version/static/frames/frame_000.jpg"  # 替换为您的图像文件路径
+
+        # 读取图像文件并转换为base64
+        with open(image_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
+
+        # 准备请求数据
+        data = {
+            "image": encoded_image,
+            "question": prompt
+        }
+
+        try:
+            # 发送POST请求
+            response = requests.post(url, json=data)
+            
+            # 检查请求是否成功
+            response.raise_for_status()
+            
+            # 解析JSON响应
+            result = response.json()
+
+            print(result)
+            
+            # 返回分析结果
+            return result["response"]
+        
+        except requests.exceptions.RequestException as e:
+            print(f"发送请求时出错: {e}")
+            return None
 
     def generate_response(self, prompt):
         self.chat.append({"role": "user", "content": prompt})

@@ -126,6 +126,10 @@
                 appendMessage('Agent', `search action: ${data.content}`, 'agent-message');
             }
 
+            if (data.device === 'vision') {
+                appendMessage('Agent', `vision analysis: ${data.content}`, 'agent-message');
+            }
+
             sendData(data)
             // 添加更多的 agent 动作处理逻辑
         });
