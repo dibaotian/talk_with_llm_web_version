@@ -25,7 +25,7 @@ import logging
 global logger
 logging.basicConfig(
     filename='log_app.log',  # 将日志写入文件
-    level=logging.ERROR,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     force=True,
 )
@@ -193,7 +193,7 @@ def handle_camera_status(data):
     
 @socketio.on('video_frame')
 def handle_video_frame(data):
-    logger.debug(f"Received frame {data['frameCount']}")
+    # logger.debug(f"Received frame {data['frameCount']}")
     try:
         image_data = data['frame'].split(',')[1]  # 移除 data URL 前缀
         frame_count = data['frameCount']
@@ -209,7 +209,7 @@ def handle_video_frame(data):
         filepath = os.path.join(FRAME_FOLDER, filename)
         image.save(filepath, quality=95, optimize=True)
         
-        logger.info(f"Saved frame {frame_count} to {filepath}")
+        # logger.info(f"Saved frame {frame_count} to {filepath}")
     except Exception as e:
         logger.error(f"Error processing frame: {e}")
 
@@ -268,9 +268,7 @@ def main():
     )
 
     try:
-        # pipeline_manager = ThreadManager([vad, whisper_stt, llm, chat_tts])
         pipeline_manager = ThreadManager([vad, whisper_stt, llm, chat_tts, send_audio])
-        # pipeline_manager = ThreadManager([llm])
         pipeline_manager.start()
 
     except KeyboardInterrupt:
@@ -278,7 +276,8 @@ def main():
 
     # 设置为监听所有 IP 地址，并将端口改为 8888
     # socketio.run(app, host='0.0.0.0', port=8888, debug=True)
-    socketio.run(app, host='0.0.0.0', port=8888, ssl_context=('cert.pem', 'key.pem'))
+    # do not enable debug=True, it will cause repeated loading model
+    socketio.run(app, host='0.0.0.0', port=8888,ssl_context=('cert.pem', 'key.pem'))
 
 
 if __name__ == '__main__':

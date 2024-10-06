@@ -36,3 +36,5 @@ if __name__ == '__main__':
 1 下载cert.pem 到本地
 
 ![alt text](image-3.png)
+
+pip install deepfilternet

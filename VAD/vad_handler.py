@@ -4,7 +4,9 @@ import numpy as np
 import torch
 from rich.console import Console
 
+import torchaudio
 from utils import int2float
+from df.enhance import enhance, init_df
 
 import logging
 
@@ -18,6 +20,7 @@ class VADHandler(BaseHandler):
     When voice activity is detected, audio will be accumulated until the end of speech is detected and then passed
     to the following part.
     Here we can assign it to CPU or GPU, default is using CPU
+    2024-10-06 add DeepFilterNet  https://github.com/Rikorose/DeepFilterNet/tree/main
     """
 
     def setup(
@@ -29,7 +32,7 @@ class VADHandler(BaseHandler):
             min_speech_ms=500, 
             max_speech_ms=float('inf'),
             speech_pad_ms=30,
-
+            audio_enhancement=True,
         ):
         self.should_listen = should_listen
         self.sample_rate = sample_rate
@@ -37,11 +40,11 @@ class VADHandler(BaseHandler):
         self.min_speech_ms = min_speech_ms
         self.max_speech_ms = max_speech_ms
 
-         # 确定设备
-         # I have two gpu, I want to assign it to first one
-        # 在每个线程中加载模型
+        # 确定设备
         print("load the VAD model")
+        # Silero VAD supports 8000 Hz and 16000 Hz sampling rates.
         self.model, _ = torch.hub.load('snakers4/silero-vad', 'silero_vad')
+        logger.info("VAD model loaded successfully")
 
         # set the process to GPU cause VAD can not work properly
         # self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -56,9 +59,17 @@ class VADHandler(BaseHandler):
             speech_pad_ms=speech_pad_ms,
         )
 
+        self.audio_enhancement = audio_enhancement
+        if audio_enhancement:
+            self.enhanced_model, self.df_state, _ = init_df()
+
     def process(self, audio_chunk):
         try:
+            # logger.debug("Processing audio chunk for VAD")
             # print("audio_chunk len", len(audio_chunk))
+            if not isinstance(audio_chunk, bytes):
+                raise ValueError("Expected audio_chunk to be of type bytes")
+            
             audio_int16 = np.frombuffer(audio_chunk, dtype=np.int16)
             audio_float32 = int2float(audio_int16)
 
@@ -77,6 +88,7 @@ class VADHandler(BaseHandler):
             vad_output = self.iterator(torch.from_numpy(audio_float32))
             if vad_output is not None and len(vad_output) != 0:
                 logger.debug("VAD: end of speech detected")
+                # logger.debug(f"VAD output: {vad_output}")
                 array = torch.cat(vad_output).cpu().numpy()
                 duration_ms = len(array) / self.sample_rate * 1000
                 if duration_ms < self.min_speech_ms or duration_ms > self.max_speech_ms:
@@ -84,6 +96,28 @@ class VADHandler(BaseHandler):
                 else:
                     self.should_listen.clear()
                     logger.debug("Stop listening")
+                    if self.audio_enhancement:
+                        if self.sample_rate != self.df_state.sr():
+                            audio_float32 = torchaudio.functional.resample(
+                                torch.from_numpy(array),
+                                orig_freq=self.sample_rate,
+                                new_freq=self.df_state.sr(),
+                            )
+                            enhanced = enhance(
+                                self.enhanced_model,
+                                self.df_state,
+                                audio_float32.unsqueeze(0),
+                            )
+                            enhanced = torchaudio.functional.resample(
+                                enhanced,
+                                orig_freq=self.df_state.sr(),
+                                new_freq=self.sample_rate,
+                            )
+                        else:
+                            enhanced = enhance(
+                                self.enhanced_model, self.df_state, audio_float32
+                            )
+                    array = enhanced.numpy().squeeze()
                     yield array
         except Exception as e:
-            logger.error(f"Error processing audio chunk: {e}")
+            logger.error(f"Error processing audio chunk: {e},exc_info=True")

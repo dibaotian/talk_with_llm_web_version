@@ -18,6 +18,7 @@ from nltk import sent_tokenize
 import json
 from flask_socketio import emit
 import re
+import os
 
 import logging
 
@@ -37,7 +38,7 @@ search_agent = DuckDuckGoSearch()
 class LargeLanguageModelHandler(BaseHandler):
     """
     Handles the language model part. 
-    Here I use Qwen2-7B
+    Here I useing Qwen2.5-7B-Instruct 4bit 
     """
     
     def __init__(self, stop_event, queue_in, queue_out):
@@ -82,7 +83,7 @@ class LargeLanguageModelHandler(BaseHandler):
 
         ##################################################################################
         # if model_name == "THUDM/glm-4v-9b":
-        print("load the Qwen2-7B model")
+        print("load the Qwen2.5-7B-Instruct model")
         
         if model_name == "Qwen/Qwen2.5-7B-Instruct":
 
@@ -191,68 +192,74 @@ class LargeLanguageModelHandler(BaseHandler):
     def process(self, prompt):
         logger.info("inferring language model...")
 
-        self.chat.append(
-            {"role": self.user_role, "content": prompt}
-        )
+        try:
 
-        thread = Thread(target=self.pipe, args=(self.chat.to_list(),), kwargs=self.gen_kwargs)
-        thread.start()
+            self.chat.append(
+                {"role": self.user_role, "content": prompt}
+            )
 
-        generated_text, printable_text = "", ""
-        for new_text in self.streamer:
-            generated_text += new_text
-            printable_text += new_text
+            thread = Thread(target=self.pipe, args=(self.chat.to_list(),), kwargs=self.gen_kwargs)
+            thread.start()
 
-            # # 检查是否有图片显示请求
-            # image_path = self.check_for_image_display(printable_text)
-            # if image_path:
-            #     image_url = url_for('static', filename=f'images/{image_path}')
-            #     self.send_to_frontend(f"<img src='{image_url}' alt='Displayed Image'>")
-            #     printable_text = ""
-            # else:
-            #     # 发送文本到前端
-            #     self.send_to_frontend(new_text)
+            generated_text, printable_text = "", ""
+            for new_text in self.streamer:
+                generated_text += new_text
+                printable_text += new_text
 
-            # 检查是否有 agent 动作
-            agent_action, remaining_text = self.extract_agent_action(printable_text)
+                # # 检查是否有图片显示请求
+                # image_path = self.check_for_image_display(printable_text)
+                # if image_path:
+                #     image_url = url_for('static', filename=f'images/{image_path}')
+                #     self.send_to_frontend(f"<img src='{image_url}' alt='Displayed Image'>")
+                #     printable_text = ""
+                # else:
+                #     # 发送文本到前端
+                #     self.send_to_frontend(new_text)
 
-            if agent_action:
-                if agent_action.get('device') == 'ddg' and agent_action.get('action') == 'search':
-                    search_query = agent_action.get('content', '')
-                    yield f"请稍等，我需要搜索外部知识库:"
-                    search_summary = self.search_agent_action(search_query)
-                    printable_text += f"\n{search_summary}\n"  # 合并搜索结果
-                    self.send_json_to_frontend(agent_action)
-                elif agent_action.get('device') == 'vision' and agent_action.get('action') == 'analysis':
-                    vision_query = agent_action.get('content', '')
-                    print(vision_query)
-                    yield f"请稍等，我仔细看一下:"
-                    vision_summary = self.vision_analysis_agent(vision_query)
-                    remaining_text = f"\n{vision_summary}\n"  # 合并视觉分析结果
-                    print("vision_summary")
-                    print(vision_summary)
-                    self.send_json_to_frontend(agent_action)
+                # 检查是否有 agent 动作
+                agent_action, remaining_text = self.extract_agent_action(printable_text)
+
+                if agent_action:
+                    if agent_action.get('device') == 'ddg' and agent_action.get('action') == 'search':
+                        search_query = agent_action.get('content', '')
+                        yield f"请稍等，正在上网搜索:"
+                        search_summary = self.search_agent_action(search_query)
+                        printable_text += f"\n{search_summary}\n"  # 合并搜索结果
+                        self.send_json_to_frontend(agent_action)
+                    elif agent_action.get('device') == 'vision' and agent_action.get('action') == 'analysis':
+                        vision_query = agent_action.get('content', '')
+                        print(vision_query)
+                        # yield f"请稍等:"
+                        vision_summary = self.vision_analysis_agent(vision_query)
+                        remaining_text = f"\n{vision_summary}\n"  # 合并视觉分析结果
+                        # print("vision_summary")
+                        print(vision_summary)
+                        self.send_json_to_frontend(agent_action)
+                    else:
+                        self.send_json_to_frontend(agent_action)
+
+                    
+                    printable_text = remaining_text  # 保留非 JSON 部分的文本
                 else:
-                    self.send_json_to_frontend(agent_action)
+                    sentences = sent_tokenize(printable_text)
+                    while len(sentences) > 1:
+                        sentence = sentences.pop(0)
+                        if not self.is_json_like(sentence):  # 添加检查
+                            yield sentence
+                    printable_text = sentences[0] if sentences else ""
 
-                
-                printable_text = remaining_text  # 保留非 JSON 部分的文本
-            else:
-                sentences = sent_tokenize(printable_text)
-                while len(sentences) > 1:
-                    sentence = sentences.pop(0)
-                    if not self.is_json_like(sentence):  # 添加检查
-                        yield sentence
-                printable_text = sentences[0] if sentences else ""
+            self.chat.append(
+                {"role": "assistant", "content": generated_text}
+            )
 
-        self.chat.append(
-            {"role": "assistant", "content": generated_text}
-        )
-
-         # 输出最后的句子
-        print(printable_text)
-        if printable_text:
-            yield printable_text
+            # 输出最后的句子
+            print(printable_text)
+            if printable_text:
+                yield printable_text
+        except Exception as e:
+            logger.error(f"Error in LargeLanguageModelHandler: {e}")
+        finally:
+            self.is_processing = False  # 处理完成
 
     def send_to_frontend(self, text):
         if self.socketio:
@@ -322,17 +329,30 @@ class LargeLanguageModelHandler(BaseHandler):
         summary = self.generate_response(prompt).strip()  # 清除多余的空格和换行符
         return summary
     
+    def get_latest_image_path(self,directory):
+        # 列出目录中的所有文件
+        files = [f for f in os.listdir(directory) if f.endswith(('.jpg', '.jpeg', '.png'))]
+        
+        # 获取每个文件的完整路径和修改时间
+        full_paths = [os.path.join(directory, f) for f in files]
+        latest_file = max(full_paths, key=os.path.getmtime) if full_paths else None
+        
+        return latest_file
+    
     def vision_analysis_agent(self,question):
 
         print("vision_analysis_agent")
 
         prompt = (
-            f"请用中文回答下面的问题',{question}'。"
+            f"{question}'。"
         )
+
+        print("vision prompt", prompt)
 
         # 服务的URL
         url = "http://localhost:5000/analyze"
-        image_path = "/home/xilinx/Documents/talk_with_llm_web_version/static/frames/frame_000.jpg"  # 替换为您的图像文件路径
+        # image_path = "/home/xilinx/Documents/talk_with_llm_web_version/static/frames/frame_000.jpg"  # 替换为您的图像文件路径
+        image_path = self.get_latest_image_path("static/frames/")
 
         # 读取图像文件并转换为base64
         with open(image_path, "rb") as image_file:

@@ -22,11 +22,13 @@ class WhisperSTTHandler(BaseHandler):
     """
     Handles the Speech To Text generation using a Whisper model.
     ref :https://huggingface.co/openai/whisper-large-v3
+    2024-09-28 use  whisper-large-v3-turbo
     """
 
     def setup(
             self,
-            model_name="openai/whisper-large-v3",
+            # model_name="openai/whisper-large-v3",
+            model_name="ylacombe/whisper-large-v3-turbo",
             device="cuda:0",  
             torch_dtype="float16",  
             compile_mode=None,
@@ -39,7 +41,6 @@ class WhisperSTTHandler(BaseHandler):
         self.socketio = None  # 添加这一行
 
         # 确定设备
-        # I have two gpu, I want to assign it to first one
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
 
         logger.info("VAD will be asign to {self.device}")
@@ -57,6 +58,7 @@ class WhisperSTTHandler(BaseHandler):
             self.model.generation_config.cache_implementation = "static"
             self.model.forward = torch.compile(self.model.forward, mode=self.compile_mode, fullgraph=True)
         self.warmup()
+    
     
     def prepare_model_inputs(self, spoken_prompt):
         input_features = self.processor(
@@ -100,27 +102,32 @@ class WhisperSTTHandler(BaseHandler):
         logger.info(f"{self.__class__.__name__}:  warmed up! time: {start_event.elapsed_time(end_event) * 1e-3:.3f} s")
 
     def set_socketio(self, socketio):
-        self.socketio = socketio  # 添加这个方法
+        self.socketio = socketio 
 
-    def process(self, spoken_prompt):
+    def process(self, audio_data):
         logger.debug("infering whisper...")
 
-        global pipeline_start
-        pipeline_start = perf_counter()
+        try:
+            global pipeline_start
+            pipeline_start = perf_counter()
 
-        input_features = self.prepare_model_inputs(spoken_prompt)
-        pred_ids = self.model.generate(input_features, **self.gen_kwargs)
-        pred_text = self.processor.batch_decode(
-            pred_ids, 
-            skip_special_tokens=True,
-            decode_with_timestamps=False
-        )[0]
+            input_features = self.prepare_model_inputs(audio_data)
+            pred_ids = self.model.generate(input_features, **self.gen_kwargs)
+            pred_text = self.processor.batch_decode(
+                pred_ids, 
+                skip_special_tokens=True,
+                decode_with_timestamps=False
+            )[0]
 
-        logger.debug("finished whisper inference")
-        console.print(f"[yellow]USER: {pred_text}")
-         # 发送 STT 结果到前端
-        # 使用 socketio 发送结果到前端
-        if self.socketio:
-            self.socketio.emit('stt_result', {'text': pred_text})
+            logger.debug("finished whisper inference")
+            console.print(f"[yellow]USER: {pred_text}")
+            # 发送 STT 结果到前端
+            # 使用 socketio 发送结果到前端
+            if self.socketio:
+                self.socketio.emit('stt_result', {'text': pred_text})
 
-        yield pred_text
+            yield pred_text
+        except Exception as e:
+            logger.error(f"Error in WhisperSTTHandler: {e}",exc_info=True)
+        finally:
+            self.is_processing = False  # 处理完成
