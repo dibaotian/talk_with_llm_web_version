@@ -144,46 +144,25 @@
         async function startRecording() {
 
             if (isRecording) return; // 如果已经在录音，直接返回
+            
             try {
                     audio_stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 设置采样频率为 16 kHz
                     mediaStreamSource = audioContext.createMediaStreamSource(audio_stream);
                      // 加载 AudioWorklet
                     await audioContext.audioWorklet.addModule('/static/audio-processor.js');
                     workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
                     // 接收来自 AudioWorklet 的 PCM 数据
                     workletNode.port.onmessage = (event) => {
-                        socket.emit('audio', event.data);
+                        socket.emit('audio', event.data); // 发送 ArrayBuffer
                     };
 
                     mediaStreamSource.connect(workletNode);
                     isRecording = true;
-                } catch (error) {
-                    console.error('Error accessing microphone:', error);
-                }
-
-            // if (!audioContext) {
-            //     audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 }); // 设置采样频率为 16 kHz
-            // }
-
-            // const audio_stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            // mediaStreamSource = audioContext.createMediaStreamSource(audio_stream);
-
-            // // 加载 AudioWorklet
-            // await audioContext.audioWorklet.addModule('/static/audio-processor.js');
-            // const workletNode = new AudioWorkletNode(audioContext, 'audio-processor');
-
-            // workletNode.port.onmessage = (event) => {
-            //     // 接收来自 AudioWorklet 的 PCM 数据
-            //     socket.emit('audio', event.data); // 发送 ArrayBuffer
-            // };
-
-            // mediaStreamSource.connect(workletNode);
-
-            // //这里只是采集音频送给后端，不需要输出
-            // // workletNode.connect(audioContext.destination); // 连接到音频输出
-
-            // isRecording = true; // 设置录音状态为 true
+                    console.log('Recording started.');
+            } catch (error) {
+                console.error('Error accessing microphone:', error);
+            }
         }
 
         // socket.on('stt_result', (data) => {

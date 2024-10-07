@@ -91,7 +91,7 @@ class SendAudioHandler:
         while not self.stop_event.is_set():
             try:
                 audio_chunk = self.queue_in.get()
-                logger.info(f'Received audio chunk: {type(audio_chunk)}, shape: {getattr(audio_chunk, "shape", None)}')
+                # logger.info(f'Received audio chunk: {type(audio_chunk)}, shape: {getattr(audio_chunk, "shape", None)}')
                 
                 if isinstance(audio_chunk, np.ndarray) and audio_chunk.size > 0:
                     # 将NumPy数组转换为字节串

@@ -32,7 +32,7 @@ class VADHandler(BaseHandler):
             min_speech_ms=500, 
             max_speech_ms=float('inf'),
             speech_pad_ms=30,
-            audio_enhancement=False,
+            audio_enhancement=True,
         ):
         self.should_listen = should_listen
         self.sample_rate = sample_rate
@@ -59,9 +59,9 @@ class VADHandler(BaseHandler):
             speech_pad_ms=speech_pad_ms,
         )
 
-        # self.audio_enhancement = audio_enhancement
-        # if audio_enhancement:
-        #     self.enhanced_model, self.df_state, _ = init_df()
+        self.audio_enhancement = audio_enhancement
+        if audio_enhancement:
+            self.enhanced_model, self.df_state, _ = init_df()
 
     def process(self, audio_chunk):
         try:
@@ -86,6 +86,7 @@ class VADHandler(BaseHandler):
                 
             # 应用VAD
             vad_output = self.iterator(torch.from_numpy(audio_float32))
+
             if vad_output is not None and len(vad_output) != 0:
                 logger.debug("VAD: end of speech detected")
                 # logger.debug(f"VAD output: {vad_output}")
@@ -96,28 +97,29 @@ class VADHandler(BaseHandler):
                 else:
                     self.should_listen.clear()
                     logger.debug("Stop listening")
-                    # if self.audio_enhancement:
-                    #     if self.sample_rate != self.df_state.sr():
-                    #         audio_float32 = torchaudio.functional.resample(
-                    #             torch.from_numpy(array),
-                    #             orig_freq=self.sample_rate,
-                    #             new_freq=self.df_state.sr(),
-                    #         )
-                    #         enhanced = enhance(
-                    #             self.enhanced_model,
-                    #             self.df_state,
-                    #             audio_float32.unsqueeze(0),
-                    #         )
-                    #         enhanced = torchaudio.functional.resample(
-                    #             enhanced,
-                    #             orig_freq=self.df_state.sr(),
-                    #             new_freq=self.sample_rate,
-                    #         )
-                    # else:
-                    #     enhanced = enhance(
-                    #         self.enhanced_model, self.df_state, audio_float32
-                    #     )
-                    #     array = enhanced.numpy().squeeze()
+
+                    if self.audio_enhancement:
+                        if self.sample_rate != self.df_state.sr():
+                            audio_float32 = torchaudio.functional.resample(
+                                torch.from_numpy(array),
+                                orig_freq=self.sample_rate,
+                                new_freq=self.df_state.sr(),
+                            )
+                            enhanced = enhance(
+                                self.enhanced_model,
+                                self.df_state,
+                                audio_float32.unsqueeze(0),
+                            )
+                            enhanced = torchaudio.functional.resample(
+                                enhanced,
+                                orig_freq=self.df_state.sr(),
+                                new_freq=self.sample_rate,
+                            )
+                        else:
+                            enhanced = enhance(
+                                self.enhanced_model, self.df_state, audio_float32
+                            )
+                        array = enhanced.numpy().squeeze()
 
                     yield array
         except Exception as e:
