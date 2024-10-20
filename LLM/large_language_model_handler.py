@@ -59,7 +59,7 @@ class LargeLanguageModelHandler(BaseHandler):
             # gen_kwargs={'return_full_text': False, 'temperature': 0.7, 'do_sample': False},
             gen_kwargs={'return_full_text': False,'do_sample': True},
             user_role="user",
-            chat_size=10,
+            chat_size=20,
             init_chat_role="user", 
 
             init_chat_prompt= minsprompts

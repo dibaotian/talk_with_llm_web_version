@@ -38,7 +38,7 @@ class WhisperSTTHandler(BaseHandler):
         self.torch_dtype = getattr(torch, torch_dtype)
         self.compile_mode=compile_mode
         self.gen_kwargs = gen_kwargs
-        self.socketio = None  # 添加这一行
+        self.socketio = None  
 
         # 确定设备
         self.device = torch.device(device if torch.cuda.is_available() else 'cpu')
